@@ -18,7 +18,7 @@ http://127.0.0.1:8000
 
 ## Refresh Data
 
-From the command line:
+For local development, refresh from the command line:
 
 ```bash
 python3 -m seeart.scraper
@@ -31,6 +31,15 @@ http://127.0.0.1:8000/admin
 ```
 
 Enter the same token you set in `SEEART_ADMIN_TOKEN`. The hosted GitHub Pages site does not publish or use this admin page.
+
+For the hosted website, use GitHub Actions:
+
+1. Go to the repository's Actions tab.
+2. Select `Refresh and deploy SeeArt`.
+3. Click `Run workflow`.
+4. Leave the branch as `main` and confirm.
+
+The `pages-build-deployment` entries are GitHub's internal Pages deployment records. You do not run those directly.
 
 ## Add Venues, Tabs, Or Cities
 
@@ -67,11 +76,11 @@ This repo is set up for GitHub Pages through `.github/workflows/refresh-and-depl
 The workflow:
 
 1. Runs `python -m seeart.scraper`.
-2. Commits the refreshed `data/exhibitions.json` when it changes.
-3. Builds a static site from `static/` plus `data/exhibitions.json`.
+2. Preserves the last deployed cache for venues that block scraping during a refresh.
+3. Builds a static site from `static/` plus the refreshed `data/exhibitions.json`.
 4. Deploys that static site to GitHub Pages.
 
-It runs weekly on Monday and can also be run manually from the GitHub Actions tab.
+It runs weekly on Monday at 13:00 UTC, which is around 9am New York time during daylight saving time and 8am during standard time. It can also be run manually from the GitHub Actions tab.
 
 The static GitHub Pages version reads `data/exhibitions.json` directly. The local Python server still uses `/api/exhibitions` and `/api/image`.
 

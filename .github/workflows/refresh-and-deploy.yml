@@ -9,7 +9,7 @@ on:
     - cron: "0 13 * * 1"
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -22,12 +22,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Seed cache from last deployment
+        run: |
+          curl --fail --silent --show-error --location \
+            "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/exhibitions.json" \
+            --output data/exhibitions.json \
+            || echo "No previous deployed cache found; using repository cache."
 
       - name: Refresh exhibition data
         run: python -m seeart.scraper
@@ -36,7 +43,7 @@ jobs:
         run: python -m py_compile app.py seeart/scraper.py
 
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Build static site
         run: |
@@ -47,7 +54,7 @@ jobs:
           cp data/exhibitions.json public/data/exhibitions.json
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: public
 
@@ -60,4 +67,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
