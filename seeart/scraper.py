@@ -7,6 +7,7 @@ import re
 import sys
 import time
 import argparse
+import copy
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from datetime import timedelta
@@ -285,6 +286,7 @@ def write_cache(payload: dict[str, Any]) -> None:
 
 def run_scrape() -> dict[str, Any]:
     config = read_config()
+    previous_payload = ensure_cache()
     exhibitions: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
 
@@ -301,8 +303,17 @@ def run_scrape() -> dict[str, Any]:
             exhibitions.extend(venue_items)
             print(f"{venue['name']}: {len(venue_items)} exhibitions", file=sys.stderr)
         except Exception as exc:
-            errors.append({"venue": venue["name"], "url": venue["url"], "error": str(exc)})
-            print(f"{venue['name']}: ERROR {exc}", file=sys.stderr)
+            fallback_items = cached_venue_items(previous_payload, venue)
+            exhibitions.extend(fallback_items)
+            errors.append(
+                {
+                    "venue": venue["name"],
+                    "url": venue["url"],
+                    "error": str(exc),
+                    "preserved_cached_items": str(len(fallback_items)),
+                }
+            )
+            print(f"{venue['name']}: ERROR {exc}; preserved {len(fallback_items)} cached items", file=sys.stderr)
 
     exhibitions = [
         item
@@ -321,6 +332,20 @@ def run_scrape() -> dict[str, Any]:
     }
     write_cache(payload)
     return payload
+
+
+def cached_venue_items(payload: dict[str, Any], venue: dict[str, Any]) -> list[dict[str, Any]]:
+    cached_items = payload.get("exhibitions", [])
+    if not isinstance(cached_items, list):
+        return []
+    return [
+        copy.deepcopy(item)
+        for item in cached_items
+        if isinstance(item, dict)
+        and item.get("venue") == venue.get("name")
+        and item.get("city") == venue.get("city")
+        and item.get("tab") == venue.get("tab")
+    ]
 
 
 def read_config() -> dict[str, Any]:
