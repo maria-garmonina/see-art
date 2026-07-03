@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SeeArt Admin</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Admin</p>
+        <h1>SeeArt</h1>
+      </div>
+    </header>
+    <main class="admin-main">
+      <section class="admin-panel">
+        <label class="search-box">
+          <span>Refresh token</span>
+          <input id="tokenInput" type="password" autocomplete="current-password">
+        </label>
+        <button id="refreshButton" class="primary-button">Refresh data</button>
+        <pre id="adminOutput" class="admin-output"></pre>
+      </section>
+    </main>
+    <script>
+      const button = document.querySelector("#refreshButton");
+      const tokenInput = document.querySelector("#tokenInput");
+      const output = document.querySelector("#adminOutput");
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        output.textContent = "Refreshing...";
+        try {
+          const response = await fetch("/api/refresh", {
+            method: "POST",
+            headers: { "X-SeeArt-Token": tokenInput.value }
+          });
+          const data = await response.json();
+          output.textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+          output.textContent = error.message;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,81 @@
+name: Refresh and deploy SeeArt
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+  schedule:
+    # Mondays around 9am New York time during daylight saving time.
+    - cron: "0 13 * * 1"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  refresh-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Refresh exhibition data
+        run: python -m seeart.scraper
+
+      - name: Check Python syntax
+        run: python -m py_compile app.py seeart/scraper.py
+
+      - name: Commit refreshed data
+        id: refreshed-data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/exhibitions.json
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No exhibition data changes to commit."
+          else
+            git commit -m "Refresh exhibition data [skip ci]"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push refreshed data
+        if: steps.refreshed-data.outputs.changed == 'true'
+        run: git push
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build static site
+        run: |
+          mkdir -p public/data
+          cp static/index.html public/index.html
+          cp static/app.js public/app.js
+          cp static/styles.css public/styles.css
+          cp data/exhibitions.json public/data/exhibitions.json
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: refresh-and-build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,493 @@
+{
+  "cities": ["NYC", "Boston", "Philadelphia", "London", "Munich", "Moscow"],
+  "tabs": ["Museums", "Galleries", "Exhibitions", "Выставки"],
+  "venues": [
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Metropolitan Museum of Art",
+      "url": "https://www.metmuseum.org/exhibitions",
+      "strategy": "met_cards",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/past-exhibitions", "/articles/", "/events/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "MoMA",
+      "url": "https://www.moma.org/calendar/exhibitions",
+      "include_url_keywords": ["/calendar/exhibitions/"],
+      "exclude_url_keywords": ["/film/", "/events/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Neue Galerie",
+      "url": "https://www.neuegalerie.org/exhibitions",
+      "include_url_keywords": ["/exhibitions/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Guggenheim",
+      "url": "https://www.guggenheim.org/exhibitions#exhibitions-on-view",
+      "strategy": "guggenheim_bootstrap",
+      "include_url_keywords": ["/exhibition/"],
+      "exclude_url_keywords": ["/publication/", "/event/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Frick",
+      "url": "https://www.frick.org/exhibitions",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/past"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Brooklyn Museum",
+      "url": "https://www.brooklynmuseum.org/exhibitions",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/archive"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Whitney",
+      "url": "https://whitney.org/exhibitions",
+      "strategy": "whitney_sections",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/events/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "New-York Historical Society",
+      "url": "https://www.nyhistory.org/exhibitions",
+      "strategy": "listing_links",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/events/", "/traveling", "/online"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "The Morgan Library & Museum",
+      "url": "https://www.themorgan.org/exhibitions/current",
+      "strategy": "morgan_cards",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/past"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Queens Museum",
+      "url": "https://queensmuseum.org/exhibitions/current/",
+      "strategy": "queens_listing",
+      "include_url_keywords": ["/exhibition/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Jewish Museum",
+      "url": "https://thejewishmuseum.org/exhibitions/",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/collection/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Museum of the City of New York",
+      "url": "https://www.mcny.org/exhibitions",
+      "include_url_keywords": ["/exhibition/"],
+      "exclude_url_keywords": ["/events/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "El Museo del Barrio",
+      "url": "https://elmuseo.org/",
+      "include_url_keywords": ["/exhibition/"],
+      "exclude_url_keywords": ["/es/exhibition/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Museums",
+      "name": "Cooper Hewitt",
+      "url": "https://www.cooperhewitt.org/exhibitions/",
+      "strategy": "cooper_chunks",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/events/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Galleries",
+      "name": "Galerie Gmurzynska",
+      "url": "https://www.gmurzynska.com/exhibitions",
+      "include_url_keywords": ["/exhibitions/"],
+      "nyc_only": true
+    },
+    {
+      "city": "NYC",
+      "tab": "Galleries",
+      "name": "Levy Gorvy Dayan",
+      "url": "https://www.levygorvydayan.com/exhibitions",
+      "include_url_keywords": ["/exhibitions/"],
+      "nyc_only": true
+    },
+    {
+      "city": "NYC",
+      "tab": "Galleries",
+      "name": "Berry Campbell",
+      "url": "https://berrycampbell.com/exhibitions/current/",
+      "include_url_keywords": ["/exhibitions/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Galleries",
+      "name": "Hauser & Wirth",
+      "url": "https://www.hauserwirth.com/locations/41189-hauser-wirth-18th-street/",
+      "include_url_keywords": ["/exhibitions/"],
+      "nyc_only": true
+    },
+    {
+      "city": "NYC",
+      "tab": "Galleries",
+      "name": "Brant Foundation",
+      "url": "https://www.brantfoundation.org/exhibitions/",
+      "include_url_keywords": ["/exhibitions/"]
+    },
+    {
+      "city": "NYC",
+      "tab": "Galleries",
+      "name": "Krause Gallery",
+      "url": "https://www.krausegallery.com/currentexhibit",
+      "single_page": true
+    },
+    {
+      "city": "NYC",
+      "tab": "Galleries",
+      "name": "Van Der Plas Gallery",
+      "url": "https://www.vanderplasgallery.com/current",
+      "single_page": true
+    },
+    {
+      "city": "Boston",
+      "tab": "Museums",
+      "name": "MFA",
+      "url": "https://www.mfa.org/exhibitions",
+      "strategy": "mfa_listings",
+      "upcoming_url": "https://www.mfa.org/exhibitions/upcoming",
+      "include_url_keywords": ["/exhibition/"],
+      "exclude_url_keywords": ["/exhibitions/upcoming", "/exhibitions/past", "/traveling-exhibitions"]
+    },
+    {
+      "city": "Boston",
+      "tab": "Museums",
+      "name": "Isabella Stewart Gardner Museum",
+      "url": "https://www.gardnermuseum.org/exhibitions",
+      "include_url_keywords": ["/calendar/exhibition/"],
+      "exclude_url_keywords": ["/past-exhibitions"]
+    },
+    {
+      "city": "Boston",
+      "tab": "Museums",
+      "name": "Harvard Art Museums",
+      "url": "https://harvardartmuseums.org/exhibitions",
+      "strategy": "harvard_cards",
+      "include_url_keywords": ["/exhibitions/"]
+    },
+    {
+      "city": "Boston",
+      "tab": "Museums",
+      "name": "Institute of Contemporary Art/Boston",
+      "url": "https://www.icaboston.org/exhibitions/#block-views-exhibitions-block-1",
+      "strategy": "ica_sections",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/events/"]
+    },
+    {
+      "city": "Boston",
+      "tab": "Museums",
+      "name": "MIT Museum",
+      "url": "https://mitmuseum.mit.edu/on-now/exhibitions",
+      "include_url_keywords": ["/on-now/exhibitions", "/exhibitions"]
+    },
+    {
+      "city": "Boston",
+      "tab": "Galleries",
+      "name": "Chase Young Gallery",
+      "url": "http://www.chaseyounggallery.com/currentexhibitions",
+      "strategy": "chase_young_page"
+    },
+    {
+      "city": "Boston",
+      "tab": "Galleries",
+      "name": "Galerie d'Orsay",
+      "url": "https://www.galerie-dorsay.com/exhibitions",
+      "strategy": "squarespace_events"
+    },
+    {
+      "city": "Boston",
+      "tab": "Galleries",
+      "name": "Pucker Gallery",
+      "url": "https://www.puckergallery.com",
+      "strategy": "pucker_page"
+    },
+    {
+      "city": "Boston",
+      "tab": "Galleries",
+      "name": "Krakow Witkin Gallery",
+      "url": "https://www.krakowwitkingallery.com/exhibitions/",
+      "include_url_keywords": ["/exhibition/"]
+    },
+    {
+      "city": "Boston",
+      "tab": "Galleries",
+      "name": "Gallery NAGA",
+      "url": "https://www.gallerynaga.com/exhibitions",
+      "strategy": "naga_page"
+    },
+    {
+      "city": "Philadelphia",
+      "tab": "Exhibitions",
+      "name": "Philadelphia Museum of Art",
+      "url": "https://www.philamuseum.org/exhibitions",
+      "strategy": "philamuseum_sections",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/collection/", "/events/"],
+      "location_exclude_keywords": ["Rodin Museum"]
+    },
+    {
+      "city": "Philadelphia",
+      "tab": "Exhibitions",
+      "name": "Rodin Museum",
+      "url": "https://www.philamuseum.org/exhibitions",
+      "strategy": "philamuseum_sections",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/collection/", "/events/"],
+      "location": "Rodin Museum",
+      "location_include_keywords": ["Rodin Museum"]
+    },
+    {
+      "city": "Philadelphia",
+      "tab": "Exhibitions",
+      "name": "Barnes Foundation",
+      "url": "https://www.barnesfoundation.org/whats-on/exhibitions",
+      "strategy": "barnes_sections",
+      "include_url_keywords": ["/whats-on/exhibitions/"],
+      "exclude_url_keywords": ["/past", "/collection"]
+    },
+    {
+      "city": "Philadelphia",
+      "tab": "Exhibitions",
+      "name": "Philadelphia's Magic Gardens",
+      "url": "https://www.phillymagicgardens.org/exhibitions/current-exhibition/",
+      "strategy": "magic_gardens_page"
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "National Gallery",
+      "url": "https://www.nationalgallery.org.uk/exhibitions#p-exhibitions-list-view-current",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/past-exhibitions", "/events/"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "Tate Modern",
+      "url": "https://www.tate.org.uk/whats-on?date_range=from_now&event_type=exhibition&gallery_group=tate-modern",
+      "include_url_keywords": ["/whats-on/tate-modern/"],
+      "exclude_url_keywords": ["/events/", "/online"],
+      "location_include_keywords": ["Tate Modern", "tate-modern"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "Tate Britain",
+      "url": "https://www.tate.org.uk/whats-on?date_range=from_now&event_type=exhibition&gallery_group=tate-britain",
+      "include_url_keywords": ["/whats-on/tate-britain/"],
+      "exclude_url_keywords": ["/events/", "/online"],
+      "location_include_keywords": ["Tate Britain", "tate-britain"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "Victoria and Albert Museum",
+      "url": "https://www.vam.ac.uk/whatson",
+      "strategy": "vam_whatson",
+      "include_url_keywords": ["/whatson/"],
+      "exclude_url_keywords": ["/courses/", "/talks/", "/performances/", "/events/"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "British Museum",
+      "url": "https://www.britishmuseum.org/exhibitions-events",
+      "strategy": "british_museum_listing",
+      "include_url_keywords": ["/exhibitions-events/"],
+      "exclude_url_keywords": ["/events/", "/past"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "Courtauld Gallery",
+      "url": "https://courtauld.ac.uk/whats-on/?event-genres=326",
+      "strategy": "courtauld_listing",
+      "include_url_keywords": ["/whats-on/"],
+      "exclude_url_keywords": ["/collection-open-daily"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "Saatchi Gallery",
+      "url": "https://www.saatchigallery.com/whats-on",
+      "strategy": "saatchi_listing",
+      "include_url_keywords": ["/whats-on/"],
+      "exclude_url_keywords": ["/events/", "/learning/", "/private-events/"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "Serpentine",
+      "url": "https://www.serpentinegalleries.org/whats-on/",
+      "strategy": "serpentine_listing",
+      "include_url_keywords": ["/whats-on/"],
+      "exclude_url_keywords": ["/events/", "/talks/", "/performances/"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "National Portrait Gallery",
+      "url": "https://www.npg.org.uk/whatson/",
+      "strategy": "npg_sections",
+      "include_url_keywords": ["/whatson/"],
+      "exclude_url_keywords": ["/events/", "/archive/"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "Wallace Collection",
+      "url": "https://www.wallacecollection.org/whats-on/exhibitions-displays/",
+      "strategy": "wallace_listing",
+      "include_url_keywords": ["/whats-on/"],
+      "exclude_url_keywords": ["/past-exhibitions", "/virtual-exhibitions", "/events/"]
+    },
+    {
+      "city": "London",
+      "tab": "Exhibitions",
+      "name": "Sir John Soane's Museum",
+      "url": "https://www.soane.org/whats-on?type=8",
+      "strategy": "soane_chunks",
+      "include_url_keywords": ["/whats-on/"],
+      "exclude_url_keywords": ["/events/"],
+      "exclude_text_keywords": ["Online only", "online exhibition"]
+    },
+    {
+      "city": "Munich",
+      "tab": "Exhibitions",
+      "name": "Lenbachhaus",
+      "url": "https://www.lenbachhaus.de/en/program/exhibitions",
+      "strategy": "lenbach_chunks",
+      "include_url_keywords": ["/en/program/exhibitions/detail/"],
+      "exclude_text_keywords": ["On view around the museum"]
+    },
+    {
+      "city": "Munich",
+      "tab": "Exhibitions",
+      "name": "Die Pinakotheken",
+      "url": "https://www.pinakothek.de/en/exhibitions",
+      "strategy": "pinakothek_listing",
+      "include_url_keywords": ["/en/exhibitions/"],
+      "exclude_text_keywords": ["Collection Presentation", "Sammlungspräsentation"]
+    },
+    {
+      "city": "Munich",
+      "tab": "Exhibitions",
+      "name": "Villa Stuck",
+      "url": "https://www.villastuck.de/programm",
+      "strategy": "villa_stuck_listing",
+      "include_url_keywords": ["/programm/detail/"],
+      "exclude_url_keywords": ["/kinder/", "/jugend/", "/familien/", "/archiv/"]
+    },
+    {
+      "city": "Munich",
+      "tab": "Exhibitions",
+      "name": "Museum Brandhorst",
+      "url": "https://www.museum-brandhorst.de/en/exhibitions/",
+      "include_url_keywords": ["/en/exhibitions/"],
+      "exclude_url_keywords": ["/events/", "/program/"]
+    },
+    {
+      "city": "Moscow",
+      "tab": "Выставки",
+      "name": "Пушкинский музей",
+      "url": "https://pushkinmuseum.art/events",
+      "strategy": "pushkin_events",
+      "include_url_keywords": ["/events/"],
+      "exclude_url_keywords": ["/lectures/", "/concerts/", "/excursions/"]
+    },
+    {
+      "city": "Moscow",
+      "tab": "Выставки",
+      "name": "Третьяковская галерея",
+      "url": "https://www.tretyakovgallery.ru/exhibitions/tekushchie-vystavki/",
+      "strategy": "tretyakov_listing",
+      "include_url_keywords": ["/exhibitions/tekushchie-vystavki/"],
+      "exclude_url_keywords": ["/archive/"]
+    },
+    {
+      "city": "Moscow",
+      "tab": "Выставки",
+      "name": "Музей русского импрессионизма",
+      "url": "https://www.rusimp.su/exhibitions",
+      "require_embedded_dates": true,
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/archive/", "/events/"]
+    },
+    {
+      "city": "Moscow",
+      "tab": "Выставки",
+      "name": "Еврейский музей",
+      "url": "https://www.jewish-museum.ru/exhibitions/",
+      "strategy": "jewish_moscow_listing",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/events/", "/excursions/"]
+    },
+    {
+      "city": "Moscow",
+      "tab": "Выставки",
+      "name": "Музей архитектуры",
+      "url": "https://muar.ru/exhibitions/",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_url_keywords": ["/events/", "/archive/"]
+    },
+    {
+      "city": "Moscow",
+      "tab": "Выставки",
+      "name": "ММОМА",
+      "url": "https://mmoma.ru/visit/gallery",
+      "strategy": "mmoma_gallery",
+      "include_url_keywords": ["/exhibitions/"],
+      "exclude_text_keywords": ["#онлайнвыставка", "онлайн выставка"]
+    },
+    {
+      "city": "Moscow",
+      "tab": "Выставки",
+      "name": "МАММ",
+      "url": "https://mamm-mdf.ru/exhibitions/",
+      "strategy": "mamm_listing",
+      "include_url_keywords": ["/exhibitions/"]
+    },
+    {
+      "city": "Moscow",
+      "tab": "Выставки",
+      "name": "Музей AZ",
+      "url": "https://museum-az.com/az-show/",
+      "strategy": "az_listing",
+      "include_url_keywords": ["/az-show/"],
+      "exclude_url_keywords": ["/events/"]
+    }
+  ]
+}

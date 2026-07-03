@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SeeArt</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Exhibition tracker</p>
+        <h1>SeeArt</h1>
+      </div>
+      <div class="header-controls">
+        <label class="select-label">
+          <span id="cityLabel">City</span>
+          <select id="citySelect"></select>
+        </label>
+        <p id="updatedAt" class="updated-at">Loading</p>
+      </div>
+    </header>
+
+    <main>
+      <nav id="tabs" class="tabs" aria-label="Venue groups"></nav>
+
+      <section class="toolbar" aria-label="Filters">
+        <label class="search-box">
+          <span id="searchLabel">Search</span>
+          <input id="searchInput" type="search" placeholder="Artist, venue, exhibition">
+        </label>
+      </section>
+
+      <section class="section-band">
+        <div class="section-heading">
+          <h2 id="currentHeading">On View Now</h2>
+          <p id="currentCount"></p>
+        </div>
+        <div id="currentGrid" class="card-grid"></div>
+      </section>
+
+      <section class="section-band">
+        <div class="section-heading">
+          <h2 id="upcomingHeading">Upcoming</h2>
+          <p id="upcomingCount"></p>
+        </div>
+        <div id="upcomingGrid" class="card-grid"></div>
+      </section>
+    </main>
+
+    <template id="cardTemplate">
+      <article class="exhibition-card">
+        <a class="image-link" target="_blank" rel="noreferrer">
+          <div class="image-wrap">
+            <img alt="">
+            <div class="image-fallback"></div>
+          </div>
+        </a>
+        <div class="card-body">
+          <p class="venue"></p>
+          <h3></h3>
+          <p class="dates"></p>
+          <p class="location"></p>
+          <a class="source-link" target="_blank" rel="noreferrer">Source</a>
+        </div>
+      </article>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
