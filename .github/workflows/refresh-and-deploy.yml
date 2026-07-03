@@ -29,12 +29,37 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Seed cache from last deployment
+      - name: Seed cache from freshest available cache
         run: |
-          curl --fail --silent --show-error --location \
+          if curl --fail --silent --show-error --location \
             "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/exhibitions.json" \
-            --output data/exhibitions.json \
-            || echo "No previous deployed cache found; using repository cache."
+            --output /tmp/seeart-deployed-cache.json; then
+            python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          repo_cache = Path("data/exhibitions.json")
+          deployed_cache = Path("/tmp/seeart-deployed-cache.json")
+
+          def generated_at(path):
+              try:
+                  value = json.loads(path.read_text(encoding="utf-8")).get("generated_at")
+                  if not value:
+                      return datetime.min.replace(tzinfo=timezone.utc)
+                  return datetime.fromisoformat(value.replace("Z", "+00:00"))
+              except Exception:
+                  return datetime.min.replace(tzinfo=timezone.utc)
+
+          if generated_at(deployed_cache) > generated_at(repo_cache):
+              repo_cache.write_text(deployed_cache.read_text(encoding="utf-8"), encoding="utf-8")
+              print("Using newer deployed cache.")
+          else:
+              print("Using repository cache.")
+          PY
+          else
+            echo "No previous deployed cache found; using repository cache."
+          fi
 
       - name: Refresh exhibition data
         run: python -m seeart.scraper
