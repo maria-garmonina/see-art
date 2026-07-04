@@ -4,5 +4,6 @@ __pycache__/
 .env
 data/*.json
 !data/exhibitions.json
+!data/events.json
 data/image-cache/
 !data/.gitkeep

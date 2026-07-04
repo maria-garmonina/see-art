@@ -5,8 +5,8 @@ on:
     branches: ["main"]
   workflow_dispatch:
   schedule:
-    # Mondays around 9am New York time during daylight saving time.
-    - cron: "0 13 * * 1"
+    # Daily around 9am New York time during daylight saving time.
+    - cron: "0 13 * * *"
 
 permissions:
   contents: read
@@ -29,18 +29,22 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Seed cache from freshest available cache
+      - name: Seed caches from freshest available deployed caches
         run: |
-          if curl --fail --silent --show-error --location \
-            "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/exhibitions.json" \
-            --output /tmp/seeart-deployed-cache.json; then
-            python - <<'PY'
+          seed_cache () {
+            name="$1"
+            if curl --fail --silent --show-error --location \
+              "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/${name}.json" \
+              --output "/tmp/seeart-deployed-${name}.json"; then
+              python - "$name" <<'PY'
           import json
+          import sys
           from datetime import datetime, timezone
           from pathlib import Path
 
-          repo_cache = Path("data/exhibitions.json")
-          deployed_cache = Path("/tmp/seeart-deployed-cache.json")
+          name = sys.argv[1]
+          repo_cache = Path(f"data/{name}.json")
+          deployed_cache = Path(f"/tmp/seeart-deployed-{name}.json")
 
           def generated_at(path):
               try:
@@ -53,15 +57,18 @@ jobs:
 
           if generated_at(deployed_cache) > generated_at(repo_cache):
               repo_cache.write_text(deployed_cache.read_text(encoding="utf-8"), encoding="utf-8")
-              print("Using newer deployed cache.")
+              print(f"Using newer deployed {name} cache.")
           else:
-              print("Using repository cache.")
+              print(f"Using repository {name} cache.")
           PY
-          else
-            echo "No previous deployed cache found; using repository cache."
-          fi
+            else
+              echo "No previous deployed ${name} cache found; using repository cache."
+            fi
+          }
+          seed_cache exhibitions
+          seed_cache events
 
-      - name: Refresh exhibition data
+      - name: Refresh data
         run: python -m seeart.scraper
 
       - name: Check Python syntax
@@ -77,6 +84,7 @@ jobs:
           cp static/app.js public/app.js
           cp static/styles.css public/styles.css
           cp data/exhibitions.json public/data/exhibitions.json
+          cp data/events.json public/data/events.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

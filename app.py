@@ -10,7 +10,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
-from seeart.scraper import BROWSER_USER_AGENT, CACHE_PATH, CONFIG_PATH, ensure_cache, run_scrape
+from seeart.scraper import (
+    BROWSER_USER_AGENT,
+    CONFIG_PATH,
+    ensure_cache,
+    ensure_event_cache,
+    run_all_scrapes,
+)
 
 ROOT = Path(__file__).resolve().parent
 STATIC_ROOT = ROOT / "static"
@@ -39,6 +45,9 @@ class SeeArtHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/exhibitions":
             self.write_json(ensure_cache())
             return
+        if parsed.path == "/api/events":
+            self.write_json(ensure_event_cache())
+            return
         if parsed.path == "/api/venues":
             self.write_json(read_json(CONFIG_PATH))
             return
@@ -66,7 +75,7 @@ class SeeArtHandler(SimpleHTTPRequestHandler):
             return
 
         try:
-            result = run_scrape()
+            result = run_all_scrapes()
         except Exception as exc:  # Defensive: keep admin refresh from dropping the socket.
             self.write_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -171,6 +180,7 @@ def main() -> None:
     host = os.environ.get("SEEART_HOST", "127.0.0.1")
     port = int(os.environ.get("SEEART_PORT", "8000"))
     ensure_cache()
+    ensure_event_cache()
     server = ThreadingHTTPServer((host, port), SeeArtHandler)
     print(f"SeeArt running at http://{host}:{port}")
     server.serve_forever()

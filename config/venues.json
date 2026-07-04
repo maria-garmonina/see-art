@@ -1,6 +1,50 @@
 {
   "cities": ["NYC", "Boston", "Philadelphia", "London", "Munich", "Moscow"],
   "tabs": ["Museums", "Galleries", "Exhibitions", "Выставки"],
+  "event_sources": [
+    {
+      "city": "NYC",
+      "name": "Whitney",
+      "url": "https://whitney.org/events",
+      "strategy": "whitney_events",
+      "location": "Whitney Museum of American Art"
+    },
+    {
+      "city": "NYC",
+      "name": "The Morgan Library & Museum",
+      "url": "https://www.themorgan.org/programs/list",
+      "strategy": "morgan_events",
+      "location": "The Morgan Library & Museum"
+    },
+    {
+      "city": "NYC",
+      "name": "Queens Museum",
+      "url": "https://queensmuseum.org/calendar/",
+      "strategy": "queens_events",
+      "location": "Queens Museum"
+    },
+    {
+      "city": "NYC",
+      "name": "Jewish Museum",
+      "url": "https://thejewishmuseum.org/calendar/events",
+      "strategy": "jewish_museum_events",
+      "location": "Jewish Museum"
+    },
+    {
+      "city": "NYC",
+      "name": "Museum of the City of New York",
+      "url": "https://www.mcny.org/events",
+      "strategy": "mcny_events",
+      "location": "Museum of the City of New York"
+    },
+    {
+      "city": "NYC",
+      "name": "Cooper Hewitt",
+      "url": "https://www.cooperhewitt.org/events/",
+      "strategy": "cooper_hewitt_events",
+      "location": "Cooper Hewitt, Smithsonian Design Museum"
+    }
+  ],
   "venues": [
     {
       "city": "NYC",

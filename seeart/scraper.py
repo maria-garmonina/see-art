@@ -21,6 +21,7 @@ from urllib.request import Request, urlopen
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "config" / "venues.json"
 CACHE_PATH = ROOT / "data" / "exhibitions.json"
+EVENT_CACHE_PATH = ROOT / "data" / "events.json"
 
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -28,9 +29,11 @@ BROWSER_USER_AGENT = (
 )
 USER_AGENT = BROWSER_USER_AGENT
 MAX_DETAIL_PAGES = 14
+MAX_EVENT_DETAIL_PAGES = 36
 REQUEST_TIMEOUT = 18
 REQUEST_DELAY = 0.2
 RETRY_DELAY = 1.5
+EVENT_TIMEZONE = "America/New_York"
 
 MONTHS = {
     "january": 1,
@@ -278,9 +281,32 @@ def ensure_cache() -> dict[str, Any]:
     return empty
 
 
+def ensure_event_cache() -> dict[str, Any]:
+    if EVENT_CACHE_PATH.exists():
+        with EVENT_CACHE_PATH.open("r", encoding="utf-8") as file:
+            return json.load(file)
+    config = read_config()
+    empty = {
+        "generated_at": None,
+        "cities": configured_cities(config),
+        "timezone": EVENT_TIMEZONE,
+        "filters": ["Tours", "Talks", "Performances", "Family", "Free"],
+        "events": [],
+        "errors": [],
+    }
+    write_event_cache(empty)
+    return empty
+
+
 def write_cache(payload: dict[str, Any]) -> None:
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with CACHE_PATH.open("w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2, ensure_ascii=False)
+
+
+def write_event_cache(payload: dict[str, Any]) -> None:
+    EVENT_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with EVENT_CACHE_PATH.open("w", encoding="utf-8") as file:
         json.dump(payload, file, indent=2, ensure_ascii=False)
 
 
@@ -334,6 +360,58 @@ def run_scrape() -> dict[str, Any]:
     return payload
 
 
+def run_all_scrapes() -> dict[str, Any]:
+    exhibition_payload = run_scrape()
+    event_payload = run_event_scrape()
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "exhibitions": exhibition_payload,
+        "events": event_payload,
+    }
+
+
+def run_event_scrape() -> dict[str, Any]:
+    config = read_config()
+    previous_payload = ensure_event_cache()
+    events: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+
+    for venue_order, source_config in enumerate(config.get("event_sources", [])):
+        if source_config.get("enabled", True) is False:
+            continue
+        source = {**source_config, "venue_order": venue_order}
+        try:
+            time.sleep(REQUEST_DELAY)
+            venue_events = scrape_event_source(source)
+            events.extend(venue_events)
+            print(f"{source['name']}: {len(venue_events)} events", file=sys.stderr)
+        except Exception as exc:
+            fallback_items = cached_event_source_items(previous_payload, source)
+            events.extend(fallback_items)
+            errors.append(
+                {
+                    "venue": source["name"],
+                    "url": source["url"],
+                    "error": str(exc),
+                    "preserved_cached_items": str(len(fallback_items)),
+                }
+            )
+            print(f"{source['name']}: ERROR {exc}; preserved {len(fallback_items)} cached events", file=sys.stderr)
+
+    events = [item for item in dedupe_events(events) if is_displayable_event(item)]
+    events.sort(key=event_sort_key)
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "cities": configured_cities(config),
+        "timezone": EVENT_TIMEZONE,
+        "filters": ["Tours", "Talks", "Performances", "Family", "Free"],
+        "events": events,
+        "errors": errors,
+    }
+    write_event_cache(payload)
+    return payload
+
+
 def cached_venue_items(payload: dict[str, Any], venue: dict[str, Any]) -> list[dict[str, Any]]:
     cached_items = payload.get("exhibitions", [])
     if not isinstance(cached_items, list):
@@ -345,6 +423,19 @@ def cached_venue_items(payload: dict[str, Any], venue: dict[str, Any]) -> list[d
         and item.get("venue") == venue.get("name")
         and item.get("city") == venue.get("city")
         and item.get("tab") == venue.get("tab")
+    ]
+
+
+def cached_event_source_items(payload: dict[str, Any], source: dict[str, Any]) -> list[dict[str, Any]]:
+    cached_items = payload.get("events", [])
+    if not isinstance(cached_items, list):
+        return []
+    return [
+        copy.deepcopy(item)
+        for item in cached_items
+        if isinstance(item, dict)
+        and item.get("venue") == source.get("name")
+        and item.get("city") == source.get("city")
     ]
 
 
@@ -460,6 +551,197 @@ def scrape_venue(venue: dict[str, Any]) -> list[dict[str, Any]]:
         if fallback:
             items.append(fallback)
     return [item for item in dedupe_exhibitions(items) if item["status"] != "past"]
+
+
+def scrape_event_source(source: dict[str, Any]) -> list[dict[str, Any]]:
+    listing = fetch_page(source["url"])
+    strategy = source.get("strategy", "event_detail_links")
+    if strategy == "whitney_events":
+        return scrape_whitney_events(source, listing)
+    if strategy == "jewish_museum_events":
+        return scrape_jewish_museum_events(source, listing)
+    if strategy == "queens_events":
+        return scrape_queens_events(source, listing)
+    if strategy == "morgan_events":
+        return scrape_event_detail_links(source, listing, "/programs/")
+    if strategy == "mcny_events":
+        return scrape_event_detail_links(source, listing, "/event/")
+    if strategy == "cooper_hewitt_events":
+        return scrape_event_detail_links(source, listing, "/event/")
+    return scrape_event_detail_links(source, listing, "/event/")
+
+
+def scrape_whitney_events(source: dict[str, Any], listing: ParsedPage) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    detail_cache: dict[str, dict[str, str]] = {}
+    for link in listing.links:
+        source_url = absolutize_url(listing.url, link.href)
+        parsed_url = urlparse(source_url)
+        if parsed_url.query:
+            continue
+        if not (parsed_url.path.startswith("/events/") or parsed_url.path.startswith("/visit/free-")):
+            continue
+        listing_text = clean_text(link.text)
+        date_text = event_date_text_from_text(listing_text)
+        parsed = parse_event_datetimes(date_text)
+        if not parsed:
+            continue
+        title = event_title_before_date(listing_text) or clean_title(listing_text)
+        details = event_details_for_url(source, source_url, listing_text, detail_cache)
+        item = make_event(
+            source,
+            title=title,
+            category=event_category(title, listing_text),
+            start_at=parsed[0],
+            end_at=parsed[1],
+            timezone_name=EVENT_TIMEZONE,
+            location=details.get("location") or source.get("location", source["name"]),
+            price_text=details.get("price_text") or "Price not listed",
+            availability_text=details.get("availability_text") or availability_text(listing_text),
+            source_url=source_url,
+        )
+        items.append(item)
+    return dedupe_events(items)
+
+
+def scrape_jewish_museum_events(source: dict[str, Any], listing: ParsedPage) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    detail_cache: dict[str, dict[str, str]] = {}
+    for link in listing.links:
+        source_url = absolutize_url(listing.url, link.href)
+        if "/program/" not in urlparse(source_url).path:
+            continue
+        listing_text = clean_text(link.text)
+        parsed = parse_event_datetimes(listing_text)
+        if not parsed:
+            continue
+        title, category = jewish_event_title_category(listing_text)
+        details = event_details_for_url(source, source_url, listing_text, detail_cache)
+        items.append(
+            make_event(
+                source,
+                title=title or event_title_before_date(listing_text),
+                category=event_category(title, category),
+                start_at=parsed[0],
+                end_at=parsed[1],
+                timezone_name=EVENT_TIMEZONE,
+                location=details.get("location") or source.get("location", source["name"]),
+                price_text=details.get("price_text") or "Price not listed",
+                availability_text=details.get("availability_text") or availability_text(listing_text),
+                source_url=source_url,
+            )
+        )
+    return dedupe_events(items)
+
+
+def scrape_queens_events(source: dict[str, Any], listing: ParsedPage) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    detail_cache: dict[str, dict[str, str]] = {}
+    for link in listing.links:
+        source_url = absolutize_url(listing.url, link.href)
+        if "/event/" not in urlparse(source_url).path:
+            continue
+        listing_text = clean_text(link.text)
+        parsed = parse_event_datetimes(listing_text)
+        if not parsed:
+            continue
+        details = event_details_for_url(source, source_url, listing_text, detail_cache)
+        title = event_title_before_date(listing_text) or details.get("title") or clean_title(listing_text)
+        items.append(
+            make_event(
+                source,
+                title=title,
+                category=event_category(title, listing_text),
+                start_at=parsed[0],
+                end_at=parsed[1],
+                timezone_name=EVENT_TIMEZONE,
+                location=details.get("location") or source.get("location", source["name"]),
+                price_text=details.get("price_text") or "Price not listed",
+                availability_text=details.get("availability_text") or availability_text(listing_text),
+                source_url=source_url,
+            )
+        )
+    return dedupe_events(items)
+
+
+def scrape_event_detail_links(source: dict[str, Any], listing: ParsedPage, path_prefix: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    detail_cache: dict[str, dict[str, str]] = {}
+    for source_url, title, listing_text in event_detail_links(listing, path_prefix)[:MAX_EVENT_DETAIL_PAGES]:
+        if is_class_like_event(f"{title} {listing_text}"):
+            continue
+        details = event_details_for_url(source, source_url, listing_text, detail_cache)
+        date_text = details.get("date_text") or event_date_text_from_text(listing_text)
+        parsed = parse_event_datetimes(date_text)
+        if not parsed:
+            continue
+        items.append(
+            make_event(
+                source,
+                title=title,
+                category=event_category(title, listing_text),
+                start_at=parsed[0],
+                end_at=parsed[1],
+                timezone_name=EVENT_TIMEZONE,
+                location=details.get("location") or source.get("location", source["name"]),
+                price_text=details.get("price_text") or "Price not listed",
+                availability_text=details.get("availability_text") or availability_text(f"{listing_text} {details.get('text', '')}"),
+                source_url=source_url,
+            )
+        )
+    return dedupe_events(items)
+
+
+def event_detail_links(listing: ParsedPage, path_prefix: str) -> list[tuple[str, str, str]]:
+    seen: set[str] = set()
+    links: list[tuple[str, str, str]] = []
+    for link in listing.links:
+        source_url = absolutize_url(listing.url, link.href)
+        parsed = urlparse(source_url)
+        if not parsed.path.startswith(path_prefix):
+            continue
+        if parsed.query or source_url in seen:
+            continue
+        text = clean_text(link.text)
+        low = text.lower()
+        if not text or low in {"events", "event", "programs", "upcoming", "browse list"}:
+            continue
+        if any(phrase in low for phrase in ["view full event details", "order tickets", "get your tickets", "register", "join the waitlist"]):
+            continue
+        seen.add(source_url)
+        links.append((source_url, clean_title(text), text))
+    return links
+
+
+def event_details_for_url(
+    source: dict[str, Any],
+    source_url: str,
+    listing_text: str,
+    cache: dict[str, dict[str, str]],
+) -> dict[str, str]:
+    if source_url in cache:
+        return cache[source_url]
+    details: dict[str, str] = {}
+    try:
+        page = fetch_page(source_url)
+    except (HTTPError, URLError, TimeoutError):
+        cache[source_url] = details
+        return details
+
+    detail_text = clean_text(" ".join(page.chunks[:90]))
+    title = extract_event_title(page, source.get("name", ""), listing_text)
+    date_text = extract_event_date_text(source, page, listing_text)
+    if title:
+        details["title"] = title
+    if date_text:
+        details["date_text"] = date_text
+    details["price_text"] = extract_event_price_text(page) or "Price not listed"
+    details["availability_text"] = availability_text(f"{listing_text} {detail_text}")
+    details["location"] = extract_event_location(source, page) or source.get("location", source.get("name", ""))
+    details["category"] = event_category(title or listing_text, detail_text)
+    details["text"] = detail_text
+    cache[source_url] = details
+    return details
 
 
 def fetch_page(url: str) -> ParsedPage:
@@ -2440,6 +2722,422 @@ def make_item(
     }
 
 
+def make_event(
+    source: dict[str, Any],
+    *,
+    title: str,
+    category: str,
+    start_at: str,
+    end_at: str,
+    timezone_name: str,
+    location: str,
+    price_text: str,
+    availability_text: str,
+    source_url: str,
+) -> dict[str, Any]:
+    title = clean_title(title)
+    price_text = clean_text(price_text) or "Price not listed"
+    identity = "|".join([source["city"], source["name"], title, start_at, source_url])
+    item_id = hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
+    return {
+        "id": item_id,
+        "city": source["city"],
+        "venue": source["name"],
+        "venue_order": source.get("venue_order", 999),
+        "venue_url": source["url"],
+        "title": title,
+        "category": category or "Events",
+        "start_at": start_at,
+        "end_at": end_at,
+        "timezone": timezone_name,
+        "location": clean_location_text(location) or source.get("location", source["name"]),
+        "price_text": price_text,
+        "price": parse_price_value(price_text),
+        "availability_text": clean_text(availability_text),
+        "source_url": source_url,
+    }
+
+
+def is_displayable_event(item: dict[str, Any]) -> bool:
+    title = item.get("title", "")
+    if not title or not item.get("start_at") or not item.get("source_url"):
+        return False
+    combined = " ".join(
+        str(item.get(key, ""))
+        for key in ["title", "category", "price_text", "availability_text", "location"]
+    )
+    if is_class_like_event(combined) or is_member_only_event(combined):
+        return False
+    start = parse_local_datetime(str(item.get("start_at", "")))
+    end = parse_local_datetime(str(item.get("end_at", "")))
+    if not start:
+        return False
+    today = date.today()
+    if start.date() < today:
+        return False
+    if start.date() > today + timedelta(days=180):
+        return False
+    if end and end.date() != start.date():
+        return False
+    return True
+
+
+def is_class_like_event(value: str) -> bool:
+    low = clean_text(value).lower()
+    class_patterns = [
+        r"\bclasses?\b",
+        r"\bworkshops?\b",
+        r"\bcourses?\b",
+        r"\bcamps?\b",
+        r"\bsummer camp\b",
+        r"\bprofessional development\b",
+        r"\beducator tour and workshop\b",
+        r"\bteacher workshop\b",
+        r"\bteen workshop\b",
+        r"\bkids art studio\b",
+    ]
+    return any(re.search(pattern, low) for pattern in class_patterns)
+
+
+def is_member_only_event(value: str) -> bool:
+    low = clean_text(value).lower()
+    member_only_phrases = [
+        "member nights",
+        "member morning",
+        "member mornings",
+        "members' thursdays",
+        "members only",
+        "member-only",
+        "exclusively to members",
+        "free for members",
+        "for members",
+    ]
+    if "non-member" in low or "nonmembers" in low or "non-members" in low:
+        return False
+    return any(phrase in low for phrase in member_only_phrases)
+
+
+def dedupe_events(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[str, dict[str, Any]] = {}
+    for item in items:
+        key = "|".join(
+            [
+                item.get("city", ""),
+                item.get("venue", ""),
+                item.get("title", "").lower(),
+                item.get("start_at", ""),
+            ]
+        )
+        existing = deduped.get(key)
+        if not existing:
+            deduped[key] = item
+            continue
+        if item.get("price_text") != "Price not listed" and existing.get("price_text") == "Price not listed":
+            deduped[key] = item
+        elif item.get("availability_text") and not existing.get("availability_text"):
+            deduped[key] = item
+    return list(deduped.values())
+
+
+def event_sort_key(item: dict[str, Any]) -> tuple[str, str, int, str]:
+    return (
+        item.get("city", ""),
+        item.get("start_at", ""),
+        int(item.get("venue_order", 999)),
+        item.get("title", "").lower(),
+    )
+
+
+def parse_local_datetime(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def parse_event_datetimes(text: str, default_minutes: int = 60) -> tuple[str, str] | None:
+    text = normalize_event_datetime_text(text)
+    parsed_dates = parse_dates(text)
+    if not parsed_dates:
+        return None
+    start_date = parsed_dates[0]
+    end_date = parsed_dates[-1] if len(parsed_dates) > 1 else start_date
+    time_range = parse_event_time_range(text)
+    if not time_range:
+        return None
+    start_hour, start_minute, end_hour, end_minute = time_range
+    start = datetime(start_date.year, start_date.month, start_date.day, start_hour, start_minute)
+    if end_hour is None or end_minute is None:
+        end = start + timedelta(minutes=default_minutes)
+    else:
+        end = datetime(end_date.year, end_date.month, end_date.day, end_hour, end_minute)
+        if end <= start and end.date() == start.date():
+            end += timedelta(hours=12)
+    return start.isoformat(timespec="minutes"), end.isoformat(timespec="minutes")
+
+
+def normalize_event_datetime_text(value: str) -> str:
+    value = clean_text(value)
+    value = re.sub(r"\b([ap])\.m\.", r"\1m", value, flags=re.IGNORECASE)
+    value = re.sub(r"\b([ap])\.m\b", r"\1m", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+ET\b", "", value)
+    value = value.replace(" to ", " - ")
+    return value
+
+
+def parse_event_time_range(text: str) -> tuple[int, int, int | None, int | None] | None:
+    text = normalize_event_datetime_text(text)
+    range_match = re.search(
+        r"(?<!\d)(?P<h1>\d{1,2})(?::(?P<m1>\d{2}))?\s*(?P<a1>am|pm)?\s*[-–—]\s*"
+        r"(?P<h2>\d{1,2})(?::(?P<m2>\d{2}))?\s*(?P<a2>am|pm)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if range_match:
+        a1 = (range_match.group("a1") or range_match.group("a2")).lower()
+        a2 = range_match.group("a2").lower()
+        start = normalize_hour(int(range_match.group("h1")), int(range_match.group("m1") or 0), a1)
+        end = normalize_hour(int(range_match.group("h2")), int(range_match.group("m2") or 0), a2)
+        return start[0], start[1], end[0], end[1]
+
+    single_match = re.search(
+        r"(?<!\d)(?P<h>\d{1,2})(?::(?P<m>\d{2}))?\s*(?P<a>am|pm)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if not single_match:
+        return None
+    start = normalize_hour(int(single_match.group("h")), int(single_match.group("m") or 0), single_match.group("a").lower())
+    return start[0], start[1], None, None
+
+
+def normalize_hour(hour: int, minute: int, ampm: str) -> tuple[int, int]:
+    if ampm == "pm" and hour != 12:
+        hour += 12
+    elif ampm == "am" and hour == 12:
+        hour = 0
+    return hour, minute
+
+
+def event_date_text_from_text(text: str) -> str:
+    text = clean_text(text)
+    matches = date_matches(text)
+    if not matches:
+        return text
+    return text[matches[0].start() :]
+
+
+def event_title_before_date(text: str) -> str:
+    text = clean_text(text)
+    matches = date_matches(text)
+    if not matches:
+        return clean_title(text)
+    title = clean_title(text[: matches[0].start()])
+    title = re.sub(r"\b(Learn More|View full event details here|Get your tickets today)$", "", title, flags=re.IGNORECASE).strip()
+    title = re.sub(
+        r"\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\.?,?$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    ).strip()
+    return title
+
+
+def jewish_event_title_category(text: str) -> tuple[str, str]:
+    before_date = event_title_before_date(text)
+    for category in ["Classes & Workshops", "Talks & Performances", "Families", "Educators"]:
+        if before_date.lower().startswith(category.lower()):
+            return clean_title(before_date[len(category) :]), category
+    return clean_title(before_date), ""
+
+
+def extract_event_title(page: ParsedPage, venue_name: str, fallback: str) -> str:
+    candidates = [
+        page.meta.get("og:title", ""),
+        page.meta.get("twitter:title", ""),
+        page.headings[0] if page.headings else "",
+        page.title,
+        event_title_before_date(fallback),
+    ]
+    for candidate in candidates:
+        title = strip_site_title(clean_title(candidate), venue_name)
+        if title and not has_date_text(title):
+            return title
+    return clean_title(event_title_before_date(fallback))
+
+
+def extract_event_date_text(source: dict[str, Any], page: ParsedPage, listing_text: str) -> str:
+    raw = page.raw_html
+    patterns = [
+        r'field--name-field-display-date[^>]*field--item">(?P<value>.*?)</div>',
+        r'field--name-field-display-date[^>]*>.*?field--item">(?P<value>.*?)</div>',
+        r"<span>\s*When:\s*</span>\s*(?P<value>.*?)</div>",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, raw, re.IGNORECASE | re.DOTALL)
+        if match:
+            value = clean_date_text(strip_tags(match.group("value")))
+            if value:
+                return value
+
+    sidebar_date = sidebar_widget_value(raw, "Date")
+    sidebar_time = sidebar_widget_value(raw, "Time")
+    if sidebar_date and sidebar_time:
+        return clean_date_text(f"{sidebar_date} {sidebar_time}")
+
+    for script in page.json_ld:
+        try:
+            data = json.loads(script)
+        except json.JSONDecodeError:
+            continue
+        for node in flatten_json_ld(data):
+            type_text = " ".join(node.get("@type", [])) if isinstance(node.get("@type"), list) else str(node.get("@type", ""))
+            if "Event" not in type_text:
+                continue
+            start = json_ld_local_datetime(str(node.get("startDate", "")))
+            end = json_ld_local_datetime(str(node.get("endDate", "")))
+            if start:
+                start_dt = parse_local_datetime(start)
+                end_dt = parse_local_datetime(end) if end else None
+                if start_dt and end_dt:
+                    return f"{format_date_label(start_dt.date().isoformat())} {format_time_label(start_dt)} - {format_time_label(end_dt)}"
+                if start_dt:
+                    return f"{format_date_label(start_dt.date().isoformat())} {format_time_label(start_dt)}"
+
+    for chunk in page.chunks[:80]:
+        if has_date_text(chunk) and parse_event_datetimes(chunk):
+            return clean_date_text(chunk)
+    return event_date_text_from_text(listing_text)
+
+
+def json_ld_local_datetime(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return parsed.replace(tzinfo=None).isoformat(timespec="minutes")
+
+
+def format_time_label(value: datetime) -> str:
+    hour = value.hour
+    minute = value.minute
+    ampm = "PM" if hour >= 12 else "AM"
+    display_hour = hour % 12 or 12
+    if minute:
+        return f"{display_hour}:{minute:02d} {ampm}"
+    return f"{display_hour} {ampm}"
+
+
+def sidebar_widget_value(raw_html: str, label: str) -> str:
+    pattern = (
+        rf'<div class="sidebar__widget-title">\s*{re.escape(label)}\s*</div>\s*'
+        r'<div class="sidebar__widget-content">\s*(?P<value>.*?)</div>'
+    )
+    match = re.search(pattern, raw_html, re.IGNORECASE | re.DOTALL)
+    if not match:
+        return ""
+    return clean_text(strip_tags(match.group("value")))
+
+
+def extract_event_price_text(page: ParsedPage) -> str:
+    raw = page.raw_html
+    patterns = [
+        r"<span>\s*Price:\s*</span>\s*(?P<value>.*?)</div>",
+        r'field--name-field-tickets.*?<div class="field--label">Tickets</div>.*?<div class="field--item">(?P<value>.*?)</div>',
+        r'field--name-field-tickets.*?<div class="field--item">(?P<value>.*?)</div>',
+        r'events__event-ticket-price[^>]*>(?P<value>.*?)</span>',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, raw, re.IGNORECASE | re.DOTALL)
+        if match:
+            value = clean_text(strip_tags(match.group("value")))
+            if value:
+                return value
+    for chunk in page.chunks[:55]:
+        low = chunk.lower()
+        if "$" in chunk or re.search(r"\bfree\b", low):
+            if low.startswith("free friday nights"):
+                continue
+            if "discount available at checkout" in low:
+                continue
+            if any(
+                phrase in low
+                for phrase in [
+                    "free priority admission",
+                    "free or discounted tickets to museum programs",
+                    "pre-sale opportunities",
+                    "member preview",
+                    "guest passes",
+                    "special savings",
+                    "join now",
+                    "ability to purchase",
+                ]
+            ):
+                continue
+            if any(
+                phrase in low
+                for phrase in [
+                    "membership",
+                ]
+            ) and "$" not in chunk:
+                continue
+            return clean_text(chunk)
+    return ""
+
+
+def parse_price_value(price_text: str) -> float | None:
+    low = price_text.lower()
+    if "free" in low and "$" not in price_text:
+        return 0
+    match = re.search(r"\$(?P<value>\d+(?:\.\d{1,2})?)", price_text)
+    if not match:
+        return None
+    value = float(match.group("value"))
+    return int(value) if value.is_integer() else value
+
+
+def availability_text(value: str) -> str:
+    low = value.lower()
+    if "sold out" in low:
+        return "Sold out"
+    if "waitlist" in low or "join the waitlist" in low:
+        return "Waitlist"
+    if "tickets are required" in low:
+        return "Tickets required"
+    if "advance registration" in low or "registration required" in low:
+        return "Registration required"
+    return ""
+
+
+def extract_event_location(source: dict[str, Any], page: ParsedPage) -> str:
+    raw = page.raw_html
+    address = sidebar_widget_value(raw, "Address")
+    if address:
+        return address.split(" New York")[0]
+    for chunk in page.chunks[:60]:
+        value = clean_location_text(chunk)
+        if value and (value.lower() == "online" or value.lower().startswith("floor ") or "auditorium" in value.lower()):
+            return value
+    return source.get("location", source.get("name", ""))
+
+
+def event_category(title: str, context: str = "") -> str:
+    low = f"{title} {context}".lower()
+    if "tour" in low or "gallery conversation" in low or "closer look" in low:
+        return "Tours"
+    if any(word in low for word in ["talk", "lecture", "panel", "conversation", "reading", "symposium"]):
+        return "Talks"
+    if any(word in low for word in ["concert", "performance", "music", "film", "dance", "cabaret"]):
+        return "Performances"
+    if any(word in low for word in ["family", "families", "kids", "children", "storytime"]):
+        return "Family"
+    if any(word in low for word in ["access", "asl", "captioning"]):
+        return "Access"
+    return "Events"
+
+
 def format_display_date(status: str, start_iso: str | None, end_iso: str | None, raw_date_text: str) -> str:
     start_label = format_date_label(start_iso)
     end_label = format_date_label(end_iso)
@@ -3268,16 +3966,38 @@ def absolutize_url(base_url: str, href: str) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Refresh SeeArt exhibition cache.")
+    parser = argparse.ArgumentParser(description="Refresh SeeArt exhibition and event caches.")
     parser.add_argument("--debug-venue", help="Print candidate links for one venue and exit.")
     parser.add_argument("--debug-chunks", action="store_true", help="Include parsed text chunks with --debug-venue.")
+    parser.add_argument("--exhibitions-only", action="store_true", help="Refresh only the exhibition cache.")
+    parser.add_argument("--events-only", action="store_true", help="Refresh only the event cache.")
     args = parser.parse_args()
     if args.debug_venue:
         debug_venue(args.debug_venue, include_chunks=args.debug_chunks)
         return
 
-    payload = run_scrape()
-    print(json.dumps({"generated_at": payload["generated_at"], "count": len(payload["exhibitions"]), "errors": payload["errors"]}, indent=2))
+    if args.events_only:
+        payload = run_event_scrape()
+        print(json.dumps({"generated_at": payload["generated_at"], "event_count": len(payload["events"]), "errors": payload["errors"]}, indent=2))
+        return
+    if args.exhibitions_only:
+        payload = run_scrape()
+        print(json.dumps({"generated_at": payload["generated_at"], "exhibition_count": len(payload["exhibitions"]), "errors": payload["errors"]}, indent=2))
+        return
+
+    payload = run_all_scrapes()
+    print(
+        json.dumps(
+            {
+                "generated_at": payload["generated_at"],
+                "exhibition_count": len(payload["exhibitions"]["exhibitions"]),
+                "event_count": len(payload["events"]["events"]),
+                "exhibition_errors": payload["exhibitions"]["errors"],
+                "event_errors": payload["events"]["errors"],
+            },
+            indent=2,
+        )
+    )
 
 
 def debug_venue(name: str, include_chunks: bool = False) -> None:

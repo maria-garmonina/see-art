@@ -22,6 +22,7 @@
     </header>
 
     <main>
+      <nav id="modeTabs" class="tabs" aria-label="View"></nav>
       <nav id="tabs" class="tabs" aria-label="Venue groups"></nav>
 
       <section class="toolbar" aria-label="Filters">
@@ -31,20 +32,35 @@
         </label>
       </section>
 
-      <section class="section-band">
-        <div class="section-heading">
-          <h2 id="currentHeading">On View Now</h2>
-          <p id="currentCount"></p>
-        </div>
-        <div id="currentGrid" class="card-grid"></div>
-      </section>
+      <div id="exhibitionsView">
+        <section class="section-band">
+          <div class="section-heading">
+            <h2 id="currentHeading">On View Now</h2>
+            <p id="currentCount"></p>
+          </div>
+          <div id="currentGrid" class="card-grid"></div>
+        </section>
 
-      <section class="section-band">
-        <div class="section-heading">
-          <h2 id="upcomingHeading">Upcoming</h2>
-          <p id="upcomingCount"></p>
+        <section class="section-band">
+          <div class="section-heading">
+            <h2 id="upcomingHeading">Upcoming</h2>
+            <p id="upcomingCount"></p>
+          </div>
+          <div id="upcomingGrid" class="card-grid"></div>
+        </section>
+      </div>
+
+      <section id="eventsView" class="events-view" hidden>
+        <div class="events-toolbar">
+          <div class="week-controls" aria-label="Week navigation">
+            <button id="prevWeek" type="button">Previous week</button>
+            <button id="todayWeek" type="button">Today</button>
+            <button id="nextWeek" type="button">Next week</button>
+          </div>
+          <p id="weekLabel" class="week-label"></p>
         </div>
-        <div id="upcomingGrid" class="card-grid"></div>
+        <nav id="eventFilters" class="filter-tabs" aria-label="Event filters"></nav>
+        <div id="eventsList" class="events-list"></div>
       </section>
     </main>
 
