@@ -507,6 +507,8 @@ def scrape_venue(venue: dict[str, Any]) -> list[dict[str, Any]]:
         return scrape_courtauld_listing(venue, listing)
     if strategy == "npg_sections":
         return scrape_npg_sections(venue, listing)
+    if strategy == "tate_listing":
+        return scrape_tate_listing(venue, listing)
     if strategy == "mamm_listing":
         return scrape_mamm_listing(venue, listing)
     if strategy == "saatchi_listing":
@@ -1960,6 +1962,144 @@ def scrape_npg_sections(venue: dict[str, Any], page: ParsedPage) -> list[dict[st
     return dedupe_exhibitions(items)
 
 
+def scrape_tate_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[str, Any]]:
+    includes = [part.lower() for part in venue.get("include_url_keywords", [])]
+    excludes = [part.lower() for part in venue.get("exclude_url_keywords", [])]
+    items: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    link_records: list[tuple[str, str]] = []
+
+    for link in page.links:
+        source_url = absolutize_url(page.url, link.href)
+        source_url, _fragment = urldefrag(source_url)
+        href_l = source_url.lower()
+        if not source_url.startswith("http") or source_url in seen_urls:
+            continue
+        if includes and not any(include in href_l for include in includes):
+            continue
+        if any(exclude in href_l for exclude in excludes):
+            continue
+        title = clean_listing_title_label(link.text)
+        if is_bad_title(title, venue["name"]):
+            continue
+        seen_urls.add(source_url)
+        link_records.append((source_url, title))
+
+    for source_url, link_title in link_records[:MAX_DETAIL_PAGES]:
+        block = html_block_around_url(page.raw_html, source_url, page.url)
+        title = tate_title_from_block(block, link_title)
+        date_text = tate_date_near_url(page, source_url) or tate_date_from_block(block)
+        image_url = tate_image_near_url(page, source_url) or tate_image_from_block(block, page.url)
+
+        if not date_text:
+            try:
+                detail_page = fetch_page(source_url)
+            except (HTTPError, URLError, TimeoutError):
+                detail_page = None
+            if detail_page:
+                date_text = tate_detail_date_text(detail_page) or extract_date_text(detail_page, listing_context=title)
+                image_url = image_url or preferred_image(venue, detail_page)
+                title = tate_title_from_block(detail_page.raw_html, title)
+
+        item = make_listing_item(venue, page, title, date_text, image_url, source_url=source_url)
+        if item:
+            items.append(item)
+    return dedupe_exhibitions(items)
+
+
+def tate_title_from_block(block: str, fallback: str) -> str:
+    text = strip_tags(block)
+    fallback = clean_listing_title_label(fallback)
+    if fallback and fallback.lower() in text.lower():
+        return fallback
+    heading_match = re.search(r"<h[1-4][^>]*>(?P<title>.*?)</h[1-4]>", block, re.IGNORECASE | re.DOTALL)
+    if heading_match:
+        title = clean_listing_title_label(strip_tags(heading_match.group("title")))
+        if title:
+            return title
+    return fallback
+
+
+def tate_date_from_block(block: str) -> str:
+    text = strip_tags(block)
+    text = re.sub(r"\bTate\s+(?:Modern|Britain)\b", " ", text, flags=re.IGNORECASE)
+    candidates: list[str] = []
+    for pattern in [
+        rf"\b(?:Until|Through|Open until|Closes?)\s+\d{{1,2}}\s+(?:{MONTH_RE})\s+20\d{{2}}\b",
+        rf"\b(?:Until|Through|Open until|Closes?)\s+(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\b",
+        rf"\b\d{{1,2}}\s+(?:{MONTH_RE})\s+20\d{{2}}\s*[-–—]\s*\d{{1,2}}\s+(?:{MONTH_RE})\s+20\d{{2}}\b",
+        rf"\b\d{{1,2}}\s+(?:{MONTH_RE})\s*[-–—]\s*\d{{1,2}}\s+(?:{MONTH_RE})\s+20\d{{2}}\b",
+        rf"\b(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\s*[-–—]\s*(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\b",
+    ]:
+        candidates.extend(match.group(0) for match in re.finditer(pattern, text, re.IGNORECASE))
+    for candidate in candidates:
+        date_text = clean_date_text(candidate)
+        if has_date_text(date_text):
+            status, _start_iso, end_iso = classify_dates(date_text)
+            if status in {"current", "upcoming"} and end_iso:
+                return date_text
+    return ""
+
+
+def tate_date_near_url(page: ParsedPage, source_url: str) -> str:
+    position = html_url_position(page.raw_html, source_url, page.url)
+    if position == -1:
+        return ""
+    start = max(0, position - 1400)
+    end = min(len(page.raw_html), position + 2200)
+    text = html.unescape(page.raw_html[start:end])
+    candidates: list[tuple[int, str]] = []
+    for pattern in [
+        rf"\b(?:Until|Through|Open until|Closes?)\s+\d{{1,2}}\s+(?:{MONTH_RE})\s+20\d{{2}}\b",
+        rf"\b(?:Until|Through|Open until|Closes?)\s+(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\b",
+        rf"\b\d{{1,2}}\s+(?:{MONTH_RE})\s+20\d{{2}}\s*[-–—]\s*\d{{1,2}}\s+(?:{MONTH_RE})\s+20\d{{2}}\b",
+        rf"\b\d{{1,2}}\s+(?:{MONTH_RE})\s*[-–—]\s*\d{{1,2}}\s+(?:{MONTH_RE})\s+20\d{{2}}\b",
+        rf"\b(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\s*[-–—]\s*(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\b",
+    ]:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            candidates.append((abs(start + match.start() - position), clean_date_text(strip_tags(match.group(0)))))
+    candidates.sort(key=lambda item: item[0])
+    for _distance, candidate in candidates:
+        if has_date_text(candidate):
+            status, _start_iso, end_iso = classify_dates(candidate)
+            if status in {"current", "upcoming"} and end_iso:
+                return candidate
+    return ""
+
+
+def tate_detail_date_text(page: ParsedPage) -> str:
+    for script in page.json_ld:
+        try:
+            data = json.loads(script)
+        except json.JSONDecodeError:
+            continue
+        for node in flatten_json_ld(data):
+            start = str(node.get("startDate", ""))
+            end = str(node.get("endDate", ""))
+            if start or end:
+                date_text = clean_date_text(" - ".join(part for part in [start, end] if part))
+                if has_date_text(date_text):
+                    return date_text
+    return tate_date_from_block(page.raw_html)
+
+
+def tate_image_near_url(page: ParsedPage, source_url: str) -> str:
+    position = html_url_position(page.raw_html, source_url, page.url)
+    if position == -1:
+        return ""
+    return nearest_image_to_html_position(page.raw_html, page.url, position)
+
+
+def tate_image_from_block(block: str, page_url: str) -> str:
+    image = first_image_from_html(block, page_url)
+    if image:
+        return image
+    for image in image_urls_from_raw_html(block, page_url):
+        if is_useful_image(image):
+            return image
+    return ""
+
+
 def scrape_mamm_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[str, Any]]:
     chunks = page_chunks(page)
     items: list[dict[str, Any]] = []
@@ -1988,26 +2128,113 @@ def scrape_mamm_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[st
 
 def scrape_saatchi_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[str, Any]]:
     chunks = page_chunks(page)
-    images = useful_page_images(page)
     items: list[dict[str, Any]] = []
+    seen_titles: set[str] = set()
+    excludes = [part.lower() for part in venue.get("exclude_url_keywords", [])]
+
+    for link in page.links:
+        source_url = absolutize_url(page.url, link.href)
+        source_url, _fragment = urldefrag(source_url)
+        href_l = source_url.lower()
+        if "/whats-on/" not in href_l or any(exclude in href_l for exclude in excludes):
+            continue
+        title = clean_listing_title_label(link.text)
+        title_key = comparable_text(title)
+        if is_bad_title(title, venue["name"]) or title_key in seen_titles:
+            continue
+        block = html_block_around_url(page.raw_html, source_url, page.url)
+        date_text = saatchi_date_near_url(page, source_url) or saatchi_date_from_block(block)
+        if not date_text:
+            continue
+        image_url = nearest_image_to_html_position(page.raw_html, page.url, html_url_position(page.raw_html, source_url, page.url))
+        item = make_listing_item(venue, page, title, date_text, image_url, source_url=source_url)
+        if item:
+            seen_titles.add(title_key)
+            items.append(item)
+
     for index in range(0, max(0, len(chunks) - 1)):
         title = clean_listing_title_label(chunks[index])
-        date_text = chunks[index + 1]
-        if is_bad_title(title, venue["name"]) or not has_date_text(date_text):
+        date_text = saatchi_date_text(chunks[index + 1])
+        if is_bad_title(title, venue["name"]) or has_date_text(title) or not date_text:
             continue
-        if not re.search(rf"\b\d{{1,2}}\s+(?:{MONTH_RE})\s*[-–—]\s*\d{{1,2}}\s+(?:{MONTH_RE})", date_text, re.IGNORECASE):
+        title_key = comparable_text(title)
+        if title_key in seen_titles:
             continue
+        seen_titles.add(title_key)
+        source_url = source_url_for_title(page, title, required_path="/whats-on/") or page.url
+        image_url = saatchi_image_for_title(page, title, source_url)
         item = make_listing_item(
             venue,
             page,
             title,
             date_text,
-            image_at(images, len(items)),
-            source_url=source_url_for_title(page, title, required_path="/whats-on/") or page.url,
+            image_url,
+            source_url=source_url,
         )
         if item:
             items.append(item)
     return dedupe_exhibitions(items)
+
+
+def saatchi_date_from_block(block: str) -> str:
+    text = strip_tags(block)
+    for pattern in [
+        rf"\b\d{{1,2}}\s+(?:{MONTH_RE})\s*[-–—]\s*\d{{1,2}}\s+(?:{MONTH_RE})(?:\s+20\d{{2}})?\b",
+        rf"\b(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\s*[-–—]\s*(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\b",
+    ]:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            date_text = saatchi_date_text(match.group(0))
+            if date_text:
+                return date_text
+    return ""
+
+
+def saatchi_date_near_url(page: ParsedPage, source_url: str) -> str:
+    position = html_url_position(page.raw_html, source_url, page.url)
+    if position == -1:
+        return ""
+    start = max(0, position - 1400)
+    end = min(len(page.raw_html), position + 2200)
+    text = html.unescape(page.raw_html[start:end])
+    candidates: list[tuple[int, str]] = []
+    for pattern in [
+        rf"\b\d{{1,2}}\s+(?:{MONTH_RE})\s*[-–—]\s*\d{{1,2}}\s+(?:{MONTH_RE})(?:\s+20\d{{2}})?\b",
+        rf"\b(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\s*[-–—]\s*(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\b",
+    ]:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            date_text = saatchi_date_text(strip_tags(match.group(0)))
+            if date_text:
+                candidates.append((abs(start + match.start() - position), date_text))
+    candidates.sort(key=lambda item: item[0])
+    for _distance, date_text in candidates:
+        status, _start_iso, end_iso = classify_dates(date_text)
+        if status in {"current", "upcoming"} and end_iso:
+            return date_text
+    return ""
+
+
+def saatchi_date_text(value: str) -> str:
+    date_text = clean_date_text(value)
+    if not has_date_text(date_text):
+        return ""
+    if re.search(rf"\b\d{{1,2}}\s+(?:{MONTH_RE})\s*[-–—]\s*\d{{1,2}}\s+(?:{MONTH_RE})", date_text, re.IGNORECASE):
+        return date_text
+    if re.search(rf"\b(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\s*[-–—]\s*(?:{MONTH_RE})\s+\d{{1,2}},?\s+20\d{{2}}\b", date_text, re.IGNORECASE):
+        return date_text
+    return ""
+
+
+def saatchi_image_for_title(page: ParsedPage, title: str, source_url: str) -> str:
+    if source_url and source_url != page.url:
+        position = html_url_position(page.raw_html, source_url, page.url)
+    else:
+        position = html_text_position(page.raw_html, title)
+    if position != -1:
+        image = nearest_image_to_html_position(page.raw_html, page.url, position)
+        if image:
+            return image
+    block = html_block_around_text(page.raw_html, title)
+    return first_image_from_html(block, page.url) or image_at(useful_page_images(page), 0)
 
 
 def scrape_villa_stuck_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[str, Any]]:
@@ -2078,7 +2305,7 @@ def scrape_jewish_moscow_listing(venue: dict[str, Any], page: ParsedPage) -> lis
         except (HTTPError, URLError, TimeoutError):
             item = None
         if item:
-            if index < len(images):
+            if not item.get("image_url") and index < len(images):
                 item["image_url"] = images[index]
             items.append(item)
     return dedupe_exhibitions(items)
@@ -3544,6 +3771,10 @@ def preferred_image(venue: dict[str, Any], page: ParsedPage) -> str:
 
 def venue_specific_image(venue: dict[str, Any], page: ParsedPage) -> str:
     name = venue.get("name", "")
+    if name == "Еврейский музей":
+        for image in useful_page_images(page):
+            if "jewish-museum.ru/upload/" in image.lower():
+                return image
     if name == "Galerie Gmurzynska":
         for src in page.images:
             image = absolutize_url(page.url, src)
@@ -3559,8 +3790,85 @@ def venue_specific_image(venue: dict[str, Any], page: ParsedPage) -> str:
     return ""
 
 
+def html_url_position(raw_html: str, source_url: str, page_url: str) -> int:
+    if not raw_html or not source_url:
+        return -1
+    parsed = urlparse(source_url)
+    relative = parsed.path
+    if parsed.query:
+        relative = f"{relative}?{parsed.query}"
+    variants = [
+        source_url,
+        html.escape(source_url),
+        relative,
+        html.escape(relative),
+        relative.lstrip("/"),
+        html.escape(relative.lstrip("/")),
+    ]
+    base = f"{urlparse(page_url).scheme}://{urlparse(page_url).netloc}"
+    if source_url.startswith(base):
+        variants.append(source_url.replace(base, "", 1))
+    positions = [raw_html.find(variant) for variant in variants if variant]
+    positions = [position for position in positions if position != -1]
+    return min(positions) if positions else -1
+
+
+def html_text_position(raw_html: str, text: str) -> int:
+    if not raw_html or not text:
+        return -1
+    variants = [text, html.escape(text), html.escape(text, quote=False)]
+    positions = [raw_html.find(variant) for variant in variants if variant]
+    positions = [position for position in positions if position != -1]
+    return min(positions) if positions else -1
+
+
+def html_block_around_url(raw_html: str, source_url: str, page_url: str, before: int = 1800, after: int = 2400) -> str:
+    position = html_url_position(raw_html, source_url, page_url)
+    if position == -1:
+        return ""
+    return raw_html[max(0, position - before) : min(len(raw_html), position + after)]
+
+
+def html_block_around_text(raw_html: str, text: str, before: int = 1800, after: int = 2400) -> str:
+    position = html_text_position(raw_html, text)
+    if position == -1:
+        return ""
+    return raw_html[max(0, position - before) : min(len(raw_html), position + after)]
+
+
+def nearest_image_to_html_position(raw_html: str, page_url: str, position: int, window: int = 3600) -> str:
+    if not raw_html or position < 0:
+        return ""
+    start = max(0, position - window)
+    end = min(len(raw_html), position + window)
+    snippet = raw_html[start:end]
+    candidates: list[tuple[int, str]] = []
+
+    for match in re.finditer(r"<(?:img|source)\b[^>]*>", snippet, re.IGNORECASE | re.DOTALL):
+        image = image_from_img_tag(match.group(0), page_url)
+        if is_useful_image(image):
+            candidates.append((abs(start + match.start() - position), image))
+        for styled_image in image_urls_from_style(match.group(0), page_url):
+            if is_useful_image(styled_image):
+                candidates.append((abs(start + match.start() - position), styled_image))
+
+    for match in raw_image_matches(snippet, page_url):
+        image = match[1]
+        if is_useful_image(image):
+            candidates.append((abs(start + match[0] - position), image))
+
+    candidates.sort(key=lambda item: item[0])
+    seen: set[str] = set()
+    for _distance, image in candidates:
+        if image in seen:
+            continue
+        seen.add(image)
+        return image
+    return ""
+
+
 def first_image_from_html(block: str, page_url: str) -> str:
-    for match in re.finditer(r"<img\b[^>]*>", block, re.IGNORECASE | re.DOTALL):
+    for match in re.finditer(r"<(?:img|source)\b[^>]*>", block, re.IGNORECASE | re.DOTALL):
         image = image_from_img_tag(match.group(0), page_url)
         if is_useful_image(image):
             return image
@@ -3568,6 +3876,24 @@ def first_image_from_html(block: str, page_url: str) -> str:
         if is_useful_image(image):
             return image
     return ""
+
+
+def image_urls_from_raw_html(raw_html: str, page_url: str) -> list[str]:
+    return [image for _position, image in raw_image_matches(raw_html, page_url)]
+
+
+def raw_image_matches(raw_html: str, page_url: str) -> list[tuple[int, str]]:
+    text = html.unescape(raw_html or "")
+    matches: list[tuple[int, str]] = []
+    patterns = [
+        r"https?://[^\"'()\s<>]+?\.(?:jpg|jpeg|png|webp)(?:\?[^\"'()\s<>]*)?",
+        r"/(?:upload|uploads|files|images|img|media|sites|wp-content)/[^\"'()\s<>]+?\.(?:jpg|jpeg|png|webp)(?:\?[^\"'()\s<>]*)?",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            image = absolutize_url(page_url, match.group(0).rstrip("\\"))
+            matches.append((match.start(), image))
+    return matches
 
 
 def first_href_from_html(block: str, page_url: str, required_path: str = "") -> str:
@@ -3712,6 +4038,8 @@ def is_useful_image(url: str) -> bool:
     if not lower:
         return False
     parsed = urlparse(lower)
+    if "media.tate.org.uk" in parsed.netloc and "/images/.width-" in parsed.path:
+        return False
     if any(host in parsed.netloc for host in ["mc.yandex", "google-analytics", "googletagmanager", "doubleclick", "facebook.com/tr"]):
         return False
     if "/watch/" in parsed.path or "/analytics" in parsed.path or "captcha.php" in parsed.path:

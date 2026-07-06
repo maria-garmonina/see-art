@@ -342,6 +342,7 @@
       "tab": "Exhibitions",
       "name": "Tate Modern",
       "url": "https://www.tate.org.uk/whats-on?date_range=from_now&event_type=exhibition&gallery_group=tate-modern",
+      "strategy": "tate_listing",
       "include_url_keywords": ["/whats-on/tate-modern/"],
       "exclude_url_keywords": ["/events/", "/online"],
       "location_include_keywords": ["Tate Modern", "tate-modern"]
@@ -351,6 +352,7 @@
       "tab": "Exhibitions",
       "name": "Tate Britain",
       "url": "https://www.tate.org.uk/whats-on?date_range=from_now&event_type=exhibition&gallery_group=tate-britain",
+      "strategy": "tate_listing",
       "include_url_keywords": ["/whats-on/tate-britain/"],
       "exclude_url_keywords": ["/events/", "/online"],
       "location_include_keywords": ["Tate Britain", "tate-britain"]
