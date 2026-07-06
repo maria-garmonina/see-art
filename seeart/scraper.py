@@ -493,6 +493,8 @@ def scrape_venue(venue: dict[str, Any]) -> list[dict[str, Any]]:
         return scrape_lenbach_chunks(venue, listing)
     if strategy == "pinakothek_listing":
         return scrape_pinakothek_listing(venue, listing)
+    if strategy == "haus_der_kunst_listing":
+        return scrape_haus_der_kunst_listing(venue, listing)
     if strategy == "magic_gardens_page":
         return scrape_magic_gardens_page(venue, listing)
     if strategy == "soane_chunks":
@@ -1745,6 +1747,66 @@ def pinakothek_detail_location(page: ParsedPage) -> str:
     return ""
 
 
+def scrape_haus_der_kunst_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    includes = [part.lower() for part in venue.get("include_url_keywords", [])]
+    for link in page.links:
+        source_url = absolutize_url(page.url, link.href)
+        source_url, _fragment = urldefrag(source_url)
+        if source_url in seen:
+            continue
+        if includes and not any(include in source_url.lower() for include in includes):
+            continue
+        title, date_text = haus_der_kunst_title_date(link.text)
+        if not title or not date_text:
+            continue
+        block = html_block_around_url(page.raw_html, source_url, page.url, before=300, after=1600)
+        image_url = first_image_from_html(block, page.url) or nearest_image_to_html_position(page.raw_html, page.url, html_url_position(page.raw_html, source_url, page.url))
+        item = make_listing_item(venue, page, title, date_text, image_url, source_url=source_url)
+        if item:
+            items.append(item)
+            seen.add(source_url)
+    return dedupe_exhibitions(items)
+
+
+def haus_der_kunst_title_date(text: str) -> tuple[str, str]:
+    text = clean_text(text)
+    match = re.search(
+        r"(?P<date>\d{1,2}\.\d{1,2}\.\d{2,4}\s*[-–—]\s*\d{1,2}\.\d{1,2}\.\d{2,4})\s*$",
+        text,
+    )
+    if not match:
+        return "", ""
+    title = clean_title(text[: match.start()])
+    title = re.sub(r"^(?:Film\s+installation|TUNE\s+Installation)\s*\|\s*", "", title, flags=re.IGNORECASE)
+    date_text = european_numeric_dot_range(match.group("date"))
+    return title, date_text
+
+
+def european_numeric_dot_range(text: str) -> str:
+    parts = re.split(r"\s*[-–—]\s*", clean_text(text), maxsplit=1)
+    if len(parts) != 2:
+        return text
+    first = european_numeric_dot_date(parts[0])
+    second = european_numeric_dot_date(parts[1])
+    return f"{first} - {second}" if first and second else text
+
+
+def european_numeric_dot_date(text: str) -> str:
+    match = re.match(r"^(?P<day>\d{1,2})\.(?P<month>\d{1,2})\.(?P<year>\d{2,4})$", clean_text(text))
+    if not match:
+        return ""
+    day = int(match.group("day"))
+    month = int(match.group("month"))
+    year = int(match.group("year"))
+    if year < 100:
+        year += 2000
+    if not (1 <= day <= 31 and 1 <= month <= 12):
+        return ""
+    return f"{MONTH_LABELS[month]} {day}, {year}"
+
+
 def scrape_magic_gardens_page(venue: dict[str, Any], page: ParsedPage) -> list[dict[str, Any]]:
     chunks = page_chunks(page)
     images = useful_page_images(page, reject=looks_like_magic_gardens_logo)
@@ -1967,11 +2029,13 @@ def scrape_tate_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[st
     excludes = [part.lower() for part in venue.get("exclude_url_keywords", [])]
     items: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
-    link_records: list[tuple[str, str]] = []
 
-    for link in page.links:
-        source_url = absolutize_url(page.url, link.href)
-        source_url, _fragment = urldefrag(source_url)
+    for block in html_blocks_starting_with(page.raw_html, r'<div class="card(?:\s|")'):
+        if re.match(r'<div class=["\'][^"\']*\bcard--search-promo\b', block, re.IGNORECASE):
+            continue
+        source_url = first_href_from_html(block, page.url)
+        if not source_url:
+            continue
         href_l = source_url.lower()
         if not source_url.startswith("http") or source_url in seen_urls:
             continue
@@ -1979,48 +2043,69 @@ def scrape_tate_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[st
             continue
         if any(exclude in href_l for exclude in excludes):
             continue
-        title = clean_listing_title_label(link.text)
+        if not re.search(r"<span>\s*Exhibition\s*</span>", block, re.IGNORECASE):
+            continue
+        title = tate_title_from_block(block, "")
         if is_bad_title(title, venue["name"]):
             continue
-        seen_urls.add(source_url)
-        link_records.append((source_url, title))
+        date_text = tate_date_from_block(block)
+        image_url = tate_image_from_block(block, page.url)
 
-    for source_url, link_title in link_records[:MAX_DETAIL_PAGES]:
-        block = html_block_around_url(page.raw_html, source_url, page.url)
-        title = tate_title_from_block(block, link_title)
-        date_text = tate_date_near_url(page, source_url) or tate_date_from_block(block)
-        image_url = tate_image_near_url(page, source_url) or tate_image_from_block(block, page.url)
-
-        if not date_text:
+        if not date_text or not image_url:
             try:
                 detail_page = fetch_page(source_url)
             except (HTTPError, URLError, TimeoutError):
                 detail_page = None
             if detail_page:
-                date_text = tate_detail_date_text(detail_page) or extract_date_text(detail_page, listing_context=title)
-                image_url = image_url or preferred_image(venue, detail_page)
+                date_text = date_text or tate_detail_date_text(detail_page) or extract_date_text(detail_page, listing_context=title)
+                image_url = image_url or tate_detail_image(detail_page)
                 title = tate_title_from_block(detail_page.raw_html, title)
 
         item = make_listing_item(venue, page, title, date_text, image_url, source_url=source_url)
         if item:
+            seen_urls.add(source_url)
             items.append(item)
+        if len(items) >= MAX_DETAIL_PAGES:
+            break
     return dedupe_exhibitions(items)
 
 
 def tate_title_from_block(block: str, fallback: str) -> str:
-    text = strip_tags(block)
-    fallback = clean_listing_title_label(fallback)
-    if fallback and fallback.lower() in text.lower():
-        return fallback
-    heading_match = re.search(r"<h[1-4][^>]*>(?P<title>.*?)</h[1-4]>", block, re.IGNORECASE | re.DOTALL)
+    heading_match = re.search(
+        r'<h[1-4]\b[^>]*class=["\'][^"\']*\bcard__title\b[^"\']*["\'][^>]*>(?P<title>.*?)</h[1-4]>',
+        block,
+        re.IGNORECASE | re.DOTALL,
+    )
     if heading_match:
-        title = clean_listing_title_label(strip_tags(heading_match.group("title")))
+        title = clean_listing_title_label(strip_inline_tags(heading_match.group("title")))
         if title:
             return title
+    maintitle_match = re.search(
+        r'<span\b[^>]*class=["\'][^"\']*card__title--maintitle[^"\']*["\'][^>]*>(?P<title>.*?)</span>',
+        block,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if maintitle_match:
+        return clean_listing_title_label(strip_inline_tags(maintitle_match.group("title")))
+    heading_match = re.search(r"<h[1-4][^>]*>(?P<title>.*?)</h[1-4]>", block, re.IGNORECASE | re.DOTALL)
+    if heading_match:
+        title = clean_listing_title_label(strip_inline_tags(heading_match.group("title")))
+        if title:
+            return title
+    fallback = clean_listing_title_label(fallback)
     return fallback
 
 
 def tate_date_from_block(block: str) -> str:
+    date_match = re.search(
+        r'<div\b[^>]*class=["\'][^"\']*event-info__date[^"\']*["\'][^>]*>.*?<span>(?P<date>.*?)</span>',
+        block,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if date_match:
+        date_text = clean_date_text(strip_tags(date_match.group("date")))
+        if has_date_text(date_text):
+            return date_text
     text = strip_tags(block)
     text = re.sub(r"\bTate\s+(?:Modern|Britain)\b", " ", text, flags=re.IGNORECASE)
     candidates: list[str] = []
@@ -2081,6 +2166,24 @@ def tate_detail_date_text(page: ParsedPage) -> str:
                 if has_date_text(date_text):
                     return date_text
     return tate_date_from_block(page.raw_html)
+
+
+def tate_detail_image(page: ParsedPage) -> str:
+    for key in ("og:image", "twitter:image"):
+        image = image_from_value(page.meta.get(key, ""), page.url)
+        if image:
+            return image
+    article_start = page.raw_html.find('<article class="event event--exhibition"')
+    if article_start == -1:
+        return ""
+    article_intro = page.raw_html[article_start : article_start + 26000]
+    image = first_image_from_html(article_intro, page.url)
+    if image:
+        return image
+    for image in image_urls_from_raw_html(article_intro, page.url):
+        if is_useful_image(image):
+            return image
+    return ""
 
 
 def tate_image_near_url(page: ParsedPage, source_url: str) -> str:
@@ -2428,22 +2531,22 @@ def scrape_az_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[str,
 def pushkin_location_label(value: str) -> str:
     low = clean_text(value).lower()
     if "галере" in low:
-        return "галерея"
+        return "Галерея"
     if "глав" in low:
-        return "главное здание"
+        return "Главное здание"
     return clean_location_text(value)
 
 
 def tretyakov_location_label(value: str) -> str:
     low = clean_text(value).lower()
     if "кадаш" in low:
-        return "корпус на кадашёвке"
+        return "Корпус на Кадашёвке"
     if "новая" in low:
-        return "новая третьяковка"
+        return "Новая Третьяковка"
     if "инженер" in low:
-        return "инженерный корпус"
+        return "Инженерный корпус"
     if "третьяков" in low:
-        return "третьяковская галерея"
+        return "Третьяковская галерея"
     return clean_location_text(value)
 
 
@@ -3537,6 +3640,11 @@ def strip_tags(value: str) -> str:
     return clean_text(value)
 
 
+def strip_inline_tags(value: str) -> str:
+    value = re.sub(r"</?(?:span|sup|sub|em|i|b|strong)\b[^>]*>", "", value or "", flags=re.IGNORECASE)
+    return strip_tags(value)
+
+
 def date_candidate_score(text: str) -> int:
     text = clean_text(text)
     if not text:
@@ -3836,6 +3944,17 @@ def html_block_around_text(raw_html: str, text: str, before: int = 1800, after: 
     return raw_html[max(0, position - before) : min(len(raw_html), position + after)]
 
 
+def html_blocks_starting_with(raw_html: str, start_pattern: str) -> list[str]:
+    if not raw_html:
+        return []
+    starts = [match.start() for match in re.finditer(start_pattern, raw_html, re.IGNORECASE)]
+    blocks: list[str] = []
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(raw_html)
+        blocks.append(raw_html[start:end])
+    return blocks
+
+
 def nearest_image_to_html_position(raw_html: str, page_url: str, position: int, window: int = 3600) -> str:
     if not raw_html or position < 0:
         return ""
@@ -4013,19 +4132,23 @@ def best_src_from_srcset(value: str, page_url: str) -> str:
     value = clean_text(value)
     if not value:
         return ""
-    if "," not in value:
-        return absolutize_url(page_url, value)
     candidates: list[tuple[int, str]] = []
     for part in value.split(","):
         pieces = part.strip().split()
         if not pieces:
             continue
         width = 0
-        if len(pieces) > 1 and pieces[1].endswith("w"):
-            try:
-                width = int(pieces[1][:-1])
-            except ValueError:
-                width = 0
+        for descriptor in pieces[1:]:
+            if descriptor.endswith("w"):
+                try:
+                    width = int(descriptor[:-1])
+                except ValueError:
+                    width = 0
+            elif descriptor.endswith("x") and width == 0:
+                try:
+                    width = int(float(descriptor[:-1]) * 1000)
+                except ValueError:
+                    width = 0
         candidates.append((width, pieces[0]))
     if not candidates:
         return ""
@@ -4038,7 +4161,7 @@ def is_useful_image(url: str) -> bool:
     if not lower:
         return False
     parsed = urlparse(lower)
-    if "media.tate.org.uk" in parsed.netloc and "/images/.width-" in parsed.path:
+    if parsed.netloc.endswith("tate.org.uk") and re.search(r"/images/\.(?:width|max)-", parsed.path):
         return False
     if any(host in parsed.netloc for host in ["mc.yandex", "google-analytics", "googletagmanager", "doubleclick", "facebook.com/tr"]):
         return False

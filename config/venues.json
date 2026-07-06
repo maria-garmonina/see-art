@@ -466,6 +466,14 @@
       "exclude_url_keywords": ["/events/", "/program/"]
     },
     {
+      "city": "Munich",
+      "tab": "Exhibitions",
+      "name": "Haus der Kunst",
+      "url": "https://www.hausderkunst.de/en/whats-on/exhibitions",
+      "strategy": "haus_der_kunst_listing",
+      "include_url_keywords": ["/en/eintauchen/"]
+    },
+    {
       "city": "Moscow",
       "tab": "Выставки",
       "name": "Пушкинский музей",

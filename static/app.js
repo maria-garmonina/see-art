@@ -41,7 +41,7 @@ const labels = {
     eventSearchPlaceholder: "Event, venue, category",
     current: "On View Now",
     upcoming: "Upcoming",
-    source: "Source",
+    source: "Details",
     details: "Details",
     googleCalendar: "Google Calendar",
     appleCalendar: "Apple Calendar",
@@ -67,7 +67,7 @@ const labels = {
     eventSearchPlaceholder: "Событие, музей, категория",
     current: "Сейчас",
     upcoming: "Скоро",
-    source: "Источник",
+    source: "Подробнее",
     details: "Подробнее",
     googleCalendar: "Google Calendar",
     appleCalendar: "Apple Calendar",
@@ -76,6 +76,7 @@ const labels = {
     updated: "Обновлено",
     notRefreshed: "Пока не обновлялось",
     exhibition: "выставка",
+    exhibitionsFew: "выставки",
     exhibitions: "выставок",
     event: "событие",
     events: "событий",
@@ -570,9 +571,17 @@ function countLabel(count, kind = "exhibition") {
     return `${count} ${count === 1 ? t.event : t.events}`;
   }
   if (localeCode() === "ru-RU") {
-    return `${count} ${t.exhibitions}`;
+    return `${count} ${russianPlural(count, t.exhibition, t.exhibitionsFew, t.exhibitions)}`;
   }
   return `${count} ${count === 1 ? t.exhibition : t.exhibitions}`;
+}
+
+function russianPlural(count, one, few, many) {
+  const mod10 = Math.abs(count) % 10;
+  const mod100 = Math.abs(count) % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
 }
 
 function applyLocale() {
