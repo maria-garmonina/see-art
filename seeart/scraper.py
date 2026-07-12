@@ -2059,7 +2059,7 @@ def scrape_tate_listing(venue: dict[str, Any], page: ParsedPage) -> list[dict[st
             if detail_page:
                 date_text = date_text or tate_detail_date_text(detail_page) or extract_date_text(detail_page, listing_context=title)
                 image_url = image_url or tate_detail_image(detail_page)
-                title = tate_title_from_block(detail_page.raw_html, title)
+                title = tate_detail_title(detail_page, title)
 
         item = make_listing_item(venue, page, title, date_text, image_url, source_url=source_url)
         if item:
@@ -2166,6 +2166,19 @@ def tate_detail_date_text(page: ParsedPage) -> str:
                 if has_date_text(date_text):
                     return date_text
     return tate_date_from_block(page.raw_html)
+
+
+def tate_detail_title(page: ParsedPage, fallback: str) -> str:
+    title_match = re.search(
+        r'<h1\b[^>]*class=["\'][^"\']*\bsplash-header__fulltitle\b[^"\']*["\'][^>]*>(?P<title>.*?)</h1>',
+        page.raw_html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if title_match:
+        title = clean_listing_title_label(strip_inline_tags(title_match.group("title")))
+        if title and not is_bad_title(title, "Tate"):
+            return title
+    return clean_listing_title_label(fallback)
 
 
 def tate_detail_image(page: ParsedPage) -> str:

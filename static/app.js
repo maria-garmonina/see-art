@@ -189,6 +189,8 @@ async function loadEventData() {
 }
 
 function renderControls() {
+  ensureActiveView();
+  ensureActiveTab();
   applyLocale();
   renderCitySelect();
   renderModeTabs();
@@ -211,7 +213,7 @@ function renderCitySelect() {
 function renderModeTabs() {
   const t = currentLabels();
   modeTabs.innerHTML = "";
-  for (const view of ["exhibitions", "events"]) {
+  for (const view of visibleViews()) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = view === "exhibitions" ? t.exhibitionsView : t.eventsView;
@@ -228,10 +230,11 @@ function renderModeTabs() {
 }
 
 function renderVenueTabs() {
-  tabs.hidden = state.view !== "exhibitions";
+  const cityTabs = visibleTabs();
+  tabs.hidden = state.view !== "exhibitions" || cityTabs.length <= 1;
   tabs.innerHTML = "";
   if (tabs.hidden) return;
-  for (const tab of visibleTabs()) {
+  for (const tab of cityTabs) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = tab;
@@ -271,6 +274,7 @@ function renderUpdatedAt() {
 }
 
 function render() {
+  ensureActiveView();
   if (state.view === "events") {
     exhibitionsView.hidden = true;
     eventsView.hidden = false;
@@ -359,6 +363,20 @@ function eventsForCurrentWeek() {
         .includes(state.query);
     })
     .sort((a, b) => a.start_at.localeCompare(b.start_at) || a.venue.localeCompare(b.venue));
+}
+
+function visibleViews() {
+  return cityHasEvents(state.city) ? ["exhibitions", "events"] : ["exhibitions"];
+}
+
+function cityHasEvents(city) {
+  return (state.eventsData?.events || []).some((event) => event.city === city);
+}
+
+function ensureActiveView() {
+  if (!visibleViews().includes(state.view)) {
+    state.view = "exhibitions";
+  }
 }
 
 function eventMatchesFilter(event) {
